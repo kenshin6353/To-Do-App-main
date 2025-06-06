@@ -1,0 +1,26 @@
+# docker-compose.override.yml
+# This file demonstrates how to scale services
+# Usage: docker-compose up --scale user_service=3 --scale task_service=4
+
+version: "3.8"
+
+services:
+  # Example: Scale user service to 3 instances
+  user_service:
+    deploy:
+      replicas: 3
+      
+  # Example: Scale task service to 4 instances  
+  task_service:
+    deploy:
+      replicas: 4
+      
+  # Example: Scale notification service to 2 instances
+  notification_service:
+    deploy:
+      replicas: 2
+      
+  # Example: Scale celery workers to 5 instances
+  celery_worker:
+    deploy:
+      replicas: 5 

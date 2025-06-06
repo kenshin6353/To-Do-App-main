@@ -1,0 +1,120 @@
+version: "3.8"
+
+services:
+  # Message Broker
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+
+  # Database
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: todoapp
+      POSTGRES_USER: todouser
+      POSTGRES_PASSWORD: todopass
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  # Load Balancer for Backend Services
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - user_service
+      - task_service
+      - notification_service
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "5173:5173"
+    depends_on:
+      - nginx
+    environment:
+      - VITE_API_BASE_URL=http://localhost:8080
+
+  user_service:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile.user
+    environment:
+      - FLASK_ENV=development
+      - DATABASE_URL=postgresql://todouser:todopass@postgres:5432/todoapp
+      - BROKER_URL=redis://redis:6379/0
+    depends_on:
+      - postgres
+      - redis
+    deploy:
+      replicas: 2
+
+  task_service:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile.task
+    environment:
+      - FLASK_ENV=development
+      - DATABASE_URL=postgresql://todouser:todopass@postgres:5432/todoapp
+      - BROKER_URL=redis://redis:6379/0
+    depends_on:
+      - postgres
+      - redis
+    deploy:
+      replicas: 2
+
+  notification_service:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile.notification
+    environment:
+      - FLASK_ENV=development
+      - DATABASE_URL=postgresql://todouser:todopass@postgres:5432/todoapp
+      - BROKER_URL=redis://redis:6379/0
+    depends_on:
+      - postgres
+      - redis
+    deploy:
+      replicas: 2
+
+  # Celery Worker for Background Tasks - Now using shared broker
+  celery_worker:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile.notification
+    command: python worker.py worker --loglevel=info --queues=user_queue,task_queue,notification_queue,analytics_queue
+    environment:
+      - DATABASE_URL=postgresql://todouser:todopass@postgres:5432/todoapp
+      - BROKER_URL=redis://redis:6379/0
+    depends_on:
+      - postgres
+      - redis
+    deploy:
+      replicas: 3
+
+  # Celery Beat for Scheduled Tasks - Now using shared broker
+  celery_beat:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile.notification
+    command: python worker.py beat --loglevel=info
+    environment:
+      - DATABASE_URL=postgresql://todouser:todopass@postgres:5432/todoapp
+      - BROKER_URL=redis://redis:6379/0
+    depends_on:
+      - postgres
+      - redis
+
+volumes:
+  postgres_data:
+  redis_data:
